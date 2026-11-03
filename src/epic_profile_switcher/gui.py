@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import os
+import queue
+import sys
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from . import __version__
 from .service import EpicProfileService, Profile
+from .updater import UpdateInfo, check_for_update, download_update, launch_updater
 
 
 class MainWindow(tk.Tk):
@@ -15,6 +21,10 @@ class MainWindow(tk.Tk):
         self.service = service
         self._profiles: dict[str, Profile] = {}
         self._profile_ids: list[str] = []
+        self._update_checks: queue.Queue[UpdateInfo | Exception | None] = queue.Queue()
+        self._download_results: queue.Queue[Path | Exception] = queue.Queue()
+        self._update_check_pending = False
+        self._download_pending = False
         self.title("Epic Profile Switcher")
         self.geometry("760x560")
         self.minsize(600, 440)
@@ -133,6 +143,68 @@ class MainWindow(tk.Tk):
 
         self._refresh()
         self._refresh_active_markers()
+        if os.name == "nt" and getattr(sys, "frozen", False):
+            self._update_check_pending = True
+            self.after(250, self._poll_update_results)
+            threading.Thread(target=self._check_for_updates, daemon=True).start()
+
+    def _check_for_updates(self) -> None:
+        try:
+            self._update_checks.put(check_for_update(__version__))
+        except Exception as error:
+            self._update_checks.put(error)
+
+    def _poll_update_results(self) -> None:
+        try:
+            result = self._update_checks.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self._update_check_pending = False
+            if isinstance(result, Exception):
+                self.status_label.configure(text=f"Update check failed: {result}")
+            elif result is not None:
+                if messagebox.askyesno(
+                    "Update available",
+                    f"Version {result.version} is available. Download and install it now?",
+                    parent=self,
+                ):
+                    self._download_pending = True
+                    self.status_label.configure(text=f"Downloading version {result.version}...")
+                    threading.Thread(
+                        target=self._download_update,
+                        args=(result,),
+                        daemon=True,
+                    ).start()
+
+        try:
+            download_result = self._download_results.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self._download_pending = False
+            if isinstance(download_result, Exception):
+                messagebox.showerror("Update failed", str(download_result), parent=self)
+            else:
+                try:
+                    launch_updater(download_result, Path(sys.executable), os.getpid())
+                except Exception as error:
+                    download_result.unlink(missing_ok=True)
+                    messagebox.showerror("Update failed", str(error), parent=self)
+                else:
+                    self.destroy()
+                    return
+
+        if self._update_check_pending or self._download_pending:
+            self.after(250, self._poll_update_results)
+
+    def _download_update(self, update: UpdateInfo) -> None:
+        try:
+            result = download_update(update, Path(sys.executable))
+        except Exception as error:
+            self._download_results.put(error)
+        else:
+            self._download_results.put(result)
 
     def _refresh(self, status: str = "") -> None:
         selected = self._selected_profile()

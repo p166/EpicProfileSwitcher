@@ -31,10 +31,19 @@ jobs:
         shell: pwsh
         run: .\build-windows.ps1
 
+      - name: Generate update checksum
+        shell: pwsh
+        run: |
+          $executable = "dist/windows/EpicProfileSwitcher.exe"
+          $hash = (Get-FileHash $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$executable.sha256" -Value $hash -NoNewline -Encoding ascii
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           generate_release_notes: true
-          files: dist/windows/EpicProfileSwitcher.exe
+          files: |
+            dist/windows/EpicProfileSwitcher.exe
+            dist/windows/EpicProfileSwitcher.exe.sha256
           fail_on_unmatched_files: true
