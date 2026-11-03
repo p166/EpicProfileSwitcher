@@ -1,19 +1,28 @@
 # Epic Profile Switcher
 
-A small Windows desktop app for saving and switching Epic Games Launcher sessions.
+[English](README.md) | [Русский](README.ru.md)
+
+A Windows desktop app for saving and switching Epic Games Launcher sessions.
 
 ## Features
 
 - Save the current Epic session as a named profile.
-- Switch profiles by closing the launcher, replacing its session file, and reopening it.
-- Start a fresh Epic sign-in session.
+- Switch profiles without blocking the interface. The app shows progress, reports when the launcher is starting, and rolls back the live session if the launcher cannot be started.
+- Open a fresh Epic sign-in session.
 - Rename and delete saved profiles.
-- Encrypt session snapshots with Windows DPAPI, scoped to the current Windows user.
-- Roll back the live session file if Epic cannot be started after a switch.
+- See the application version and open the project on GitHub from the main window.
+- Keep dialogs centered over the main window.
+- Encrypt saved session snapshots with Windows DPAPI for the current Windows user.
+- Check GitHub Releases for updates, show download progress, verify the SHA-256 checksum, and restart with the new version.
+
+## Requirements
+
+- Windows
+- Python 3.10 or newer
 
 ## Run from source
 
-Requires Windows and Python 3.10 or newer.
+From the repository root, create and activate a virtual environment, install the development dependencies, and launch the app:
 
 ```powershell
 py -3 -m venv .venv
@@ -22,15 +31,17 @@ python -m pip install -e ".[dev]"
 python -m epic_profile_switcher
 ```
 
-Run service tests with:
+Run the tests with:
 
 ```powershell
-pytest
+pytest -q
 ```
+
+Automatic update checks are enabled only in the packaged Windows executable, not when running from source.
 
 ## Build the Windows executable
 
-On Windows, install Python 3.10 or newer and make sure `python.exe` is available on `PATH`, then run the build script in PowerShell:
+Make sure `python.exe` is available on `PATH`, then run this in PowerShell:
 
 ```powershell
 .\build-windows.ps1
@@ -38,10 +49,28 @@ On Windows, install Python 3.10 or newer and make sure `python.exe` is available
 .\build-windows.ps1 -Backup
 ```
 
-The script runs the tests and builds a single-file executable at `dist/windows/EpicProfileSwitcher.exe`. Python is not required on the target computer. The first launch can take a little longer because the bundled files are extracted to a temporary directory.
+The script creates or validates `.venv-windows` against the active Python version, installs the build dependencies, runs the tests, and builds a single-file, windowed executable at `dist/windows/EpicProfileSwitcher.exe`. Python is not required on the target computer. The first launch can take a little longer while bundled files are extracted to a temporary directory.
 
-When a newer GitHub release is available, the executable offers to install it, dismiss the notification, or skip that version. Skipped versions are remembered in the user's settings. After confirmation, it verifies the download with the release's SHA-256 checksum, closes, replaces itself, and restarts. The executable must be in a folder where the current Windows user can write; running from source does not check for updates. Bump `__version__` in `src/epic_profile_switcher/__init__.py` and use the matching (or `v`-prefixed) tag for each release. The package version is read from this value, and every release must include the executable and its `.sha256` checksum asset.
+## Releases and automatic updates
 
-Profiles are stored under `%LOCALAPPDATA%\EpicProfileSwitcher\profiles`. The session INI copies are encrypted for the current Windows account; profile names and account section identifiers are kept as metadata. Epic's live session file remains managed by Epic in its normal config folder.
+The GitHub Actions release workflow runs when a `v*` tag is pushed. It can also be started manually with a tag. To publish a release:
+
+1. Set `__version__` in `src/epic_profile_switcher/__init__.py`.
+2. Push a matching tag, such as `v1.4` for version `1.4`, or manually run the **Windows release** workflow with that tag.
+3. The workflow builds the executable and publishes both `EpicProfileSwitcher.exe` and `EpicProfileSwitcher.exe.sha256` to the GitHub Release.
+
+The packaged app checks the latest GitHub Release. If a newer version is available, it offers **Update**, **Later**, and **Skip version**. A skipped version is remembered in the user's settings. When an update is accepted, the app displays download progress, verifies the downloaded executable against the release's SHA-256 checksum, closes, replaces itself, and restarts. The executable must be in a folder where the current Windows user can write.
+
+## Profile storage and encryption
+
+Profiles are stored under `%LOCALAPPDATA%\EpicProfileSwitcher\profiles\<profile-id>`. Each saved session is stored as `session.ini.dpapi` and protected with Windows Data Protection API (DPAPI), using `CryptProtectData` and `CryptUnprotectData` with the current Windows user's default scope. The app does not ask for a separate password or store its own encryption key; Windows manages the key material.
+
+Only the saved session snapshot is encrypted. The accompanying `profile.json` metadata is readable and contains the profile name, creation time, account section identifiers, and hashes used to identify the active profile. Do not treat profile names or this metadata as secret.
+
+When a profile is switched, the app decrypts its snapshot and writes the session data to Epic's normal live session file so the launcher can use it. That live file is not encrypted by Epic Profile Switcher. The plaintext session is also necessarily present in memory while it is being saved or restored.
+
+DPAPI protects saved snapshots from users or processes that cannot access the current Windows user's DPAPI data. It is not protection against malware or another program running as that same user, which may be able to ask Windows to decrypt the data. Saved snapshots generally cannot be decrypted after moving them to another computer or Windows account. If the Windows account's DPAPI data is lost or becomes unavailable, the snapshots may no longer be recoverable.
+
+## Epic Games Launcher location
 
 The app detects standard install folders and Windows uninstall registry entries. If Epic was installed in a custom location that is not registered, use **Browse…** to select `EpicGamesLauncher.exe`.
