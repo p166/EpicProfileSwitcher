@@ -6,6 +6,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$basePython = (Get-Command 'python.exe' -ErrorAction Stop).Source
+$basePythonVersion = & $basePython -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not determine the active Python version: $basePython"
+}
+
 $venv = Join-Path $root '.venv-windows'
 $python = Join-Path $venv 'Scripts/python.exe'
 $buildId = Get-Date -Format 'yyyyMMddTHHmmss'
@@ -29,7 +35,15 @@ function Invoke-Checked {
 }
 
 if (-not (Test-Path $python)) {
-    Invoke-Checked 'py.exe' @('-3', '-m', 'venv', $venv)
+    Invoke-Checked $basePython @('-m', 'venv', $venv)
+}
+
+$venvPythonVersion = & $python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not determine the build environment Python version: $python"
+}
+if ($venvPythonVersion -ne $basePythonVersion) {
+    throw "The existing build environment uses Python $venvPythonVersion, but Python $basePythonVersion is active. Remove '$venv' and run the build again."
 }
 
 if (-not (Test-Path $applicationIcon)) {

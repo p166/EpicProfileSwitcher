@@ -30,7 +30,7 @@ pytest
 
 ## Build the Windows executable
 
-On Windows, install Python 3.10 or newer with the Python Launcher (`py.exe`), then run the build script in PowerShell:
+On Windows, install Python 3.10 or newer and make sure `python.exe` is available on `PATH`, then run the build script in PowerShell:
 
 ```powershell
 .\build-windows.ps1
