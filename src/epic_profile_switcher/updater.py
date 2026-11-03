@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 REPOSITORY = "p166/EpicProfileSwitcher"
 EXECUTABLE_NAME = "EpicProfileSwitcher.exe"
@@ -79,7 +80,11 @@ def check_for_update(current_version: str) -> UpdateInfo | None:
     )
 
 
-def download_update(update: UpdateInfo, target_path: Path) -> Path:
+def download_update(
+    update: UpdateInfo,
+    target_path: Path,
+    progress: Callable[[int, int | None], None] | None = None,
+) -> Path:
     target_path = target_path.resolve()
     checksum_data = _read_url(update.checksum_url, limit=1024).decode("ascii")
     match = re.search(r"\b([0-9a-fA-F]{64})\b", checksum_data)
@@ -102,12 +107,22 @@ def download_update(update: UpdateInfo, target_path: Path) -> Path:
         )
         with os.fdopen(descriptor, "wb") as staged_file:
             with urllib.request.urlopen(request, timeout=30) as response:
+                content_length = response.headers.get("Content-Length")
+                if content_length is not None and not content_length.isdecimal():
+                    raise ValueError("The update response has an invalid Content-Length.")
+                total_size = int(content_length) if content_length is not None else None
+                if total_size is not None and total_size > MAX_DOWNLOAD_SIZE:
+                    raise ValueError("The update exceeds the allowed size.")
+                if progress is not None:
+                    progress(0, total_size)
                 while chunk := response.read(1024 * 1024):
                     size += len(chunk)
                     if size > MAX_DOWNLOAD_SIZE:
                         raise ValueError("The update exceeds the allowed size.")
                     digest.update(chunk)
                     staged_file.write(chunk)
+                    if progress is not None:
+                        progress(size, total_size)
         if digest.hexdigest() != expected_hash:
             raise ValueError("The downloaded update failed its SHA-256 check.")
         return staged_path

@@ -150,3 +150,21 @@ def test_delete_profile_removes_only_saved_snapshot(tmp_path: Path) -> None:
 
     assert not service.list_profiles()
     assert service.session_path.read_bytes() == live
+
+
+def test_skipped_update_version_persists_without_overwriting_launcher_path(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    service.save_launcher_path(service.launcher_path)
+
+    service.skip_update_version("v1.2")
+
+    restarted_service = EpicProfileService(
+        root=service.root,
+        launcher_path=service.launcher_path,
+        session_path=service.session_path,
+        protector=TestProtector(),
+        stop_launcher=lambda: None,
+        start_launcher=lambda _: None,
+    )
+    assert restarted_service.get_skipped_update_version() == "v1.2"
+    assert restarted_service.launcher_path == service.launcher_path

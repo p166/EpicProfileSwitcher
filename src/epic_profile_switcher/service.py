@@ -177,6 +177,17 @@ class EpicProfileService:
         settings["launcher_path"] = str(path)
         _atomic_write(self.settings_path, json.dumps(settings, indent=2).encode("utf-8"))
 
+    def get_skipped_update_version(self) -> str | None:
+        version = self._read_settings().get("skipped_update_version")
+        return version if isinstance(version, str) else None
+
+    def skip_update_version(self, version: str) -> None:
+        if not version.strip():
+            raise ValueError("Update version cannot be empty.")
+        settings = self._read_settings()
+        settings["skipped_update_version"] = version
+        _atomic_write(self.settings_path, json.dumps(settings, indent=2).encode("utf-8"))
+
     def list_profiles(self) -> list[Profile]:
         current_identity: tuple[str | None, str, tuple[str, ...]] | None = None
         if self.session_path.is_file():

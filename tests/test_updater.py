@@ -60,6 +60,10 @@ def test_download_update_checks_sha256_and_stages_beside_target(
     monkeypatch.setattr(updater, "_read_url", lambda *_args, **_kwargs: checksum)
 
     class Response(io.BytesIO):
+        def __init__(self, data: bytes) -> None:
+            super().__init__(data)
+            self.headers = {"Content-Length": str(len(data))}
+
         def __enter__(self) -> Response:
             return self
 
@@ -74,15 +78,18 @@ def test_download_update_checks_sha256_and_stages_beside_target(
     monkeypatch.setattr(updater.urllib.request, "urlopen", open_url)
     target = tmp_path / updater.EXECUTABLE_NAME
     target.write_bytes(b"old executable")
+    progress: list[tuple[int, int | None]] = []
 
     staged = updater.download_update(
         updater.UpdateInfo("v1.1", "https://github.com/p166/app.exe", "https://github.com/p166/app.sha256"),
         target,
+        progress=lambda downloaded, total: progress.append((downloaded, total)),
     )
 
     assert staged.parent == tmp_path
     assert staged.read_bytes() == binary
     assert target.read_bytes() == b"old executable"
+    assert progress == [(0, len(binary)), (len(binary), len(binary))]
 
 
 def test_download_update_removes_bad_download(
@@ -92,6 +99,10 @@ def test_download_update_removes_bad_download(
     monkeypatch.setattr(updater, "_read_url", lambda *_args, **_kwargs: b"0" * 64)
 
     class Response(io.BytesIO):
+        def __init__(self, data: bytes) -> None:
+            super().__init__(data)
+            self.headers = {"Content-Length": str(len(data))}
+
         def __enter__(self) -> Response:
             return self
 

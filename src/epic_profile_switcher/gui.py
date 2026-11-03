@@ -9,6 +9,7 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Literal
 
 from . import __version__
 from .service import EpicProfileService, Profile
@@ -23,6 +24,7 @@ class MainWindow(tk.Tk):
         self._profile_ids: list[str] = []
         self._update_checks: queue.Queue[UpdateInfo | Exception | None] = queue.Queue()
         self._download_results: queue.Queue[Path | Exception] = queue.Queue()
+        self._download_progress: queue.Queue[tuple[int, int | None]] = queue.Queue()
         self._update_check_pending = False
         self._download_pending = False
         self.title("Epic Profile Switcher")
@@ -120,8 +122,11 @@ class MainWindow(tk.Tk):
         self.status_label = ttk.Label(root, style="Muted.TLabel", wraplength=660)
         self.status_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 12))
 
+        self.download_progress = ttk.Progressbar(root, mode="indeterminate", maximum=100)
+        self._progress_mode = "indeterminate"
+
         actions = ttk.Frame(root)
-        actions.grid(row=4, column=0, columnspan=2, sticky="ew")
+        actions.grid(row=5, column=0, columnspan=2, sticky="ew")
         self.save_button = ttk.Button(actions, text="Save current", command=self._save_current)
         self.save_button.pack(side="left")
         self.switch_button = ttk.Button(
@@ -133,7 +138,7 @@ class MainWindow(tk.Tk):
         self.switch_button.pack(side="left", padx=(8, 0))
 
         secondary = ttk.Frame(root)
-        secondary.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        secondary.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self.add_login_button = ttk.Button(secondary, text="Add another login", command=self._add_login)
         self.add_login_button.pack(side="left")
         self.delete_button = ttk.Button(secondary, text="Delete", command=self._delete_profile)
@@ -155,6 +160,15 @@ class MainWindow(tk.Tk):
             self._update_checks.put(error)
 
     def _poll_update_results(self) -> None:
+        latest_progress: tuple[int, int | None] | None = None
+        while True:
+            try:
+                latest_progress = self._download_progress.get_nowait()
+            except queue.Empty:
+                break
+        if latest_progress is not None:
+            self._show_download_progress(*latest_progress)
+
         try:
             result = self._update_checks.get_nowait()
         except queue.Empty:
@@ -163,19 +177,17 @@ class MainWindow(tk.Tk):
             self._update_check_pending = False
             if isinstance(result, Exception):
                 self.status_label.configure(text=f"Update check failed: {result}")
-            elif result is not None:
-                if messagebox.askyesno(
-                    "Update available",
-                    f"Version {result.version} is available. Download and install it now?",
-                    parent=self,
-                ):
-                    self._download_pending = True
-                    self.status_label.configure(text=f"Downloading version {result.version}...")
-                    threading.Thread(
-                        target=self._download_update,
-                        args=(result,),
-                        daemon=True,
-                    ).start()
+            elif result is not None and self.service.get_skipped_update_version() != result.version:
+                action = self._ask_update_action(result.version)
+                if action == "skip":
+                    try:
+                        self.service.skip_update_version(result.version)
+                    except Exception as error:
+                        messagebox.showerror("Could not skip version", str(error), parent=self)
+                    else:
+                        self.status_label.configure(text=f"Version {result.version} skipped.")
+                elif action == "update":
+                    self._start_update_download(result)
 
         try:
             download_result = self._download_results.get_nowait()
@@ -184,12 +196,14 @@ class MainWindow(tk.Tk):
         else:
             self._download_pending = False
             if isinstance(download_result, Exception):
+                self._hide_download_progress()
                 messagebox.showerror("Update failed", str(download_result), parent=self)
             else:
                 try:
                     launch_updater(download_result, Path(sys.executable), os.getpid())
                 except Exception as error:
                     download_result.unlink(missing_ok=True)
+                    self._hide_download_progress()
                     messagebox.showerror("Update failed", str(error), parent=self)
                 else:
                     self.destroy()
@@ -198,9 +212,98 @@ class MainWindow(tk.Tk):
         if self._update_check_pending or self._download_pending:
             self.after(250, self._poll_update_results)
 
+    def _ask_update_action(self, version: str) -> Literal["update", "later", "skip"]:
+        dialog = tk.Toplevel(self)
+        dialog.title("Доступно обновление")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        action: Literal["update", "later", "skip"] = "later"
+
+        content = ttk.Frame(dialog, padding=18)
+        content.pack(fill="both", expand=True)
+        ttk.Label(content, text=f"Доступна версия {version}.").pack(anchor="w", pady=(0, 16))
+
+        buttons = ttk.Frame(content)
+        buttons.pack(fill="x")
+
+        def finish(selection: Literal["update", "later", "skip"]) -> None:
+            nonlocal action
+            action = selection
+            dialog.destroy()
+
+        ttk.Button(
+            buttons,
+            text="Обновить",
+            command=lambda: finish("update"),
+            style="Primary.TButton",
+        ).pack(side="left")
+        ttk.Button(buttons, text="Нет", command=lambda: finish("later")).pack(
+            side="left", padx=(8, 0)
+        )
+        ttk.Button(buttons, text="Пропустить версию", command=lambda: finish("skip")).pack(
+            side="left", padx=(8, 0)
+        )
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish("later"))
+        dialog.bind("<Escape>", lambda _event: finish("later"))
+        dialog.update_idletasks()
+        dialog.geometry(
+            f"+{self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2}"
+            f"+{self.winfo_rooty() + (self.winfo_height() - dialog.winfo_height()) // 2}"
+        )
+        self.wait_window(dialog)
+        return action
+
+    def _start_update_download(self, update: UpdateInfo) -> None:
+        self._download_pending = True
+        self.status_label.configure(text=f"Downloading version {update.version}...")
+        self.download_progress.grid(
+            row=4,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 12),
+        )
+        self.download_progress.start(10)
+        threading.Thread(
+            target=self._download_update,
+            args=(update,),
+            daemon=True,
+        ).start()
+
+    def _show_download_progress(self, downloaded: int, total: int | None) -> None:
+        if not self.download_progress.winfo_manager():
+            self.download_progress.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+
+        downloaded_mb = downloaded / (1024 * 1024)
+        if total is None:
+            self.status_label.configure(text=f"Downloading update: {downloaded_mb:.1f} MB")
+            return
+
+        if self._progress_mode == "indeterminate":
+            self.download_progress.stop()
+            self.download_progress.configure(mode="determinate")
+            self._progress_mode = "determinate"
+        self.download_progress.configure(maximum=max(total, 1), value=downloaded)
+        total_mb = total / (1024 * 1024)
+        percent = min(100, downloaded * 100 // max(total, 1))
+        self.status_label.configure(
+            text=f"Downloading update: {percent}% ({downloaded_mb:.1f} / {total_mb:.1f} MB)"
+        )
+
+    def _hide_download_progress(self) -> None:
+        self.download_progress.stop()
+        self.download_progress.grid_remove()
+        self.download_progress.configure(mode="indeterminate", value=0)
+        self._progress_mode = "indeterminate"
+
     def _download_update(self, update: UpdateInfo) -> None:
         try:
-            result = download_update(update, Path(sys.executable))
+            result = download_update(
+                update,
+                Path(sys.executable),
+                progress=lambda downloaded, total: self._download_progress.put((downloaded, total)),
+            )
         except Exception as error:
             self._download_results.put(error)
         else:
