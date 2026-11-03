@@ -273,7 +273,12 @@ class EpicProfileService:
     def delete_profile(self, profile_id: str) -> None:
         shutil.rmtree(self._profile_dir(profile_id))
 
-    def switch_profile(self, profile_id: str) -> None:
+    def switch_profile(
+        self,
+        profile_id: str,
+        *,
+        on_launcher_start: Callable[[], None] | None = None,
+    ) -> None:
         if self.launcher_path is None or not self.launcher_path.is_file():
             raise FileNotFoundError("Select the Epic Games Launcher executable first.")
         profile_file = self._profile_dir(profile_id) / "session.ini.dpapi"
@@ -283,6 +288,8 @@ class EpicProfileService:
         self._stop_launcher()
         _atomic_write(self.session_path, target_content)
         try:
+            if on_launcher_start is not None:
+                on_launcher_start()
             self._start_launcher(self.launcher_path)
         except Exception:
             if old_content is None:
@@ -327,6 +334,7 @@ class EpicProfileService:
     def _stop_epic() -> None:
         if os.name != "nt":
             raise OSError("Stopping Epic Games Launcher is supported only on Windows.")
+        no_console_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         def is_running() -> bool:
             result = subprocess.run(
@@ -334,6 +342,7 @@ class EpicProfileService:
                 capture_output=True,
                 text=True,
                 check=True,
+                creationflags=no_console_window,
             )
             return any(
                 row and row[0].casefold() == "epicgameslauncher.exe"
@@ -348,6 +357,7 @@ class EpicProfileService:
             capture_output=True,
             text=True,
             check=False,
+            creationflags=no_console_window,
         )
         if result.returncode != 0 and is_running():
             raise RuntimeError(result.stderr.strip() or "Could not stop Epic Games Launcher.")

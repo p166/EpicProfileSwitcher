@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import epic_profile_switcher.service as service_module
 from epic_profile_switcher.service import EpicProfileService
 
 
@@ -110,6 +113,20 @@ def test_switch_restores_profile_and_rolls_back_when_launcher_fails(tmp_path: Pa
     assert service.session_path.read_bytes() == epic_ini("current-token")
 
 
+def test_switch_notifies_before_starting_launcher(tmp_path: Path) -> None:
+    events: list[str] = []
+    service = build_service(tmp_path, start=lambda _: events.append("launcher"))
+    service.session_path.write_bytes(epic_ini("saved-token"))
+    profile = service.save_current_profile("Saved")
+
+    service.switch_profile(
+        profile.profile_id,
+        on_launcher_start=lambda: events.append("starting"),
+    )
+
+    assert events == ["starting", "launcher"]
+
+
 def test_switch_does_not_replace_live_session_if_launcher_cannot_be_stopped(tmp_path: Path) -> None:
     started: list[Path] = []
     service = build_service(
@@ -127,6 +144,32 @@ def test_switch_does_not_replace_live_session_if_launcher_cannot_be_stopped(tmp_
 
     assert service.session_path.read_bytes() == current
     assert not started
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only process handling")
+def test_stop_epic_hides_tasklist_and_taskkill_console_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = iter(
+        (
+            SimpleNamespace(stdout='"EpicGamesLauncher.exe","123","Console","1,234 K"\n'),
+            SimpleNamespace(returncode=0, stderr=""),
+            SimpleNamespace(stdout=""),
+        )
+    )
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append((command, kwargs))
+        return next(results)
+
+    monkeypatch.setattr(service_module.subprocess, "run", fake_run)
+
+    EpicProfileService._stop_epic()
+
+    assert [command[0] for command, _ in calls] == ["tasklist", "taskkill", "tasklist"]
+    expected_flags = getattr(service_module.subprocess, "CREATE_NO_WINDOW", 0)
+    assert all(kwargs["creationflags"] == expected_flags for _, kwargs in calls)
 
 
 def test_new_login_restores_live_session_if_launcher_fails(tmp_path: Path) -> None:
