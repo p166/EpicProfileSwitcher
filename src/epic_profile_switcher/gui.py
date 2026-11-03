@@ -203,7 +203,7 @@ class MainWindow(tk.Tk):
                 messagebox.showerror("Update failed", str(download_result), parent=self)
             else:
                 try:
-                    launch_updater(download_result, Path(sys.executable), os.getpid())
+                    launch_updater(download_result, Path(sys.executable), os.getpid(), os.getppid())
                 except Exception as error:
                     download_result.unlink(missing_ok=True)
                     self._hide_download_progress()

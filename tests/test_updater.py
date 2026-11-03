@@ -142,11 +142,15 @@ def test_launch_updater_tolerates_application_already_exited(
         lambda arguments, **_kwargs: started.append(arguments),
     )
 
-    updater.launch_updater(tmp_path / "staged.exe", tmp_path / "app.exe", 123)
+    updater.launch_updater(tmp_path / "staged.exe", tmp_path / "app.exe", 123, 456)
 
     script = script_path.read_text(encoding="utf-8")
-    assert "Get-Process -Id $ProcessId -ErrorAction SilentlyContinue" in script
+    assert "Get-Process -Id $waitProcessId -ErrorAction SilentlyContinue" in script
+    assert "$ProcessId, $ParentProcessId" in script
     assert "Wait-Process -Id" not in script
     assert "[System.IO.File]::Replace($StagedPath, $TargetPath, $BackupPath)" in script
+    assert "Remove-UpdateBackup $BackupPath" in script
+    assert "\\.[0-9a-f]{32}\\.bak$" in script
     assert '$env:PYINSTALLER_RESET_ENVIRONMENT = "1"' in script
     assert started
+    assert started[0][-2:] == ["123", "456"]

@@ -131,7 +131,12 @@ def download_update(
         raise
 
 
-def launch_updater(staged_path: Path, target_path: Path, process_id: int) -> None:
+def launch_updater(
+    staged_path: Path,
+    target_path: Path,
+    process_id: int,
+    parent_process_id: int,
+) -> None:
     descriptor, script_name = tempfile.mkstemp(prefix="epic-profile-updater-", suffix=".ps1")
     os.close(descriptor)
     script_path = Path(script_name)
@@ -140,16 +145,49 @@ def launch_updater(staged_path: Path, target_path: Path, process_id: int) -> Non
             """param(
     [Parameter(Mandatory = $true)][string]$StagedPath,
     [Parameter(Mandatory = $true)][string]$TargetPath,
-    [Parameter(Mandatory = $true)][int]$ProcessId
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][int]$ParentProcessId
 )
 
+function Remove-UpdateBackup {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+        } catch {
+            if ($attempt -eq 9) {
+                throw
+            }
+        }
+        if (-not (Test-Path -LiteralPath $Path)) {
+            return
+        }
+        if ($attempt -lt 9) {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    throw "Could not delete update backup: $Path"
+}
+
+$BackupPath = $null
 try {
-    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-    if ($null -ne $process) {
-        $process.WaitForExit()
+    foreach ($waitProcessId in @($ProcessId, $ParentProcessId) | Select-Object -Unique) {
+        $process = Get-Process -Id $waitProcessId -ErrorAction SilentlyContinue
+        if ($null -ne $process) {
+            $process.WaitForExit()
+        }
     }
     $BackupPath = "$TargetPath.$([guid]::NewGuid().ToString('N')).bak"
     [System.IO.File]::Replace($StagedPath, $TargetPath, $BackupPath)
+    Remove-UpdateBackup $BackupPath
+    $BackupPath = $null
+
+    $backupPattern = '^' + [regex]::Escape([System.IO.Path]::GetFileName($TargetPath)) + '\\.[0-9a-f]{32}\\.bak$'
+    Get-ChildItem -LiteralPath (Split-Path -Parent $TargetPath) -File -ErrorAction Stop |
+        Where-Object { $_.Name -match $backupPattern } |
+        ForEach-Object { Remove-UpdateBackup $_.FullName }
+
     $env:PYINSTALLER_RESET_ENVIRONMENT = "1"
     Start-Process -FilePath $TargetPath
 } catch {
@@ -183,6 +221,7 @@ try {
                 str(staged_path),
                 str(target_path),
                 str(process_id),
+                str(parent_process_id),
             ],
             close_fds=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
