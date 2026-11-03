@@ -144,7 +144,10 @@ def launch_updater(staged_path: Path, target_path: Path, process_id: int) -> Non
 )
 
 try {
-    Wait-Process -Id $ProcessId -ErrorAction Stop
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -ne $process) {
+        $process.WaitForExit()
+    }
     [System.IO.File]::Replace($StagedPath, $TargetPath, $null)
     Start-Process -FilePath $TargetPath
 } catch {

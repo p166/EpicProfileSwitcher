@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 from urllib.request import Request
 
@@ -120,3 +121,30 @@ def test_download_update_removes_bad_download(
         )
 
     assert list(tmp_path.iterdir()) == [target]
+
+
+def test_launch_updater_tolerates_application_already_exited(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "updater.ps1"
+    started: list[list[str]] = []
+
+    def create_script(*, prefix: str, suffix: str) -> tuple[int, str]:
+        assert prefix == "epic-profile-updater-"
+        assert suffix == ".ps1"
+        return os.open(script_path, os.O_CREAT | os.O_RDWR), str(script_path)
+
+    monkeypatch.setattr(updater.tempfile, "mkstemp", create_script)
+    monkeypatch.setattr(
+        updater.subprocess,
+        "Popen",
+        lambda arguments, **_kwargs: started.append(arguments),
+    )
+
+    updater.launch_updater(tmp_path / "staged.exe", tmp_path / "app.exe", 123)
+
+    script = script_path.read_text(encoding="utf-8")
+    assert "Get-Process -Id $ProcessId -ErrorAction SilentlyContinue" in script
+    assert "Wait-Process -Id" not in script
+    assert started

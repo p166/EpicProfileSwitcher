@@ -81,7 +81,10 @@ class MainWindow(tk.Tk):
         root.rowconfigure(2, weight=1)
 
         ttk.Label(root, text="Epic profiles", style="Heading.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 14)
+            row=0, column=0, sticky="w", pady=(0, 14)
+        )
+        ttk.Label(root, text=f"Version {__version__}", style="Muted.TLabel").grid(
+            row=0, column=1, sticky="e", pady=(0, 14)
         )
 
         path_row = ttk.Frame(root)
