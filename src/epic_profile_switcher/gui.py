@@ -217,7 +217,7 @@ class MainWindow(tk.Tk):
 
     def _ask_update_action(self, version: str) -> Literal["update", "later", "skip"]:
         dialog = tk.Toplevel(self)
-        dialog.title("Доступно обновление")
+        dialog.title("Update available")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -225,7 +225,7 @@ class MainWindow(tk.Tk):
 
         content = ttk.Frame(dialog, padding=18)
         content.pack(fill="both", expand=True)
-        ttk.Label(content, text=f"Доступна версия {version}.").pack(anchor="w", pady=(0, 16))
+        ttk.Label(content, text=f"Version {version} is available.").pack(anchor="w", pady=(0, 16))
 
         buttons = ttk.Frame(content)
         buttons.pack(fill="x")
@@ -237,14 +237,14 @@ class MainWindow(tk.Tk):
 
         ttk.Button(
             buttons,
-            text="Обновить",
+            text="Update",
             command=lambda: finish("update"),
             style="Primary.TButton",
         ).pack(side="left")
-        ttk.Button(buttons, text="Нет", command=lambda: finish("later")).pack(
+        ttk.Button(buttons, text="Later", command=lambda: finish("later")).pack(
             side="left", padx=(8, 0)
         )
-        ttk.Button(buttons, text="Пропустить версию", command=lambda: finish("skip")).pack(
+        ttk.Button(buttons, text="Skip version", command=lambda: finish("skip")).pack(
             side="left", padx=(8, 0)
         )
         dialog.protocol("WM_DELETE_WINDOW", lambda: finish("later"))
