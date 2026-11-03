@@ -150,6 +150,7 @@ try {
     }
     $BackupPath = "$TargetPath.$([guid]::NewGuid().ToString('N')).bak"
     [System.IO.File]::Replace($StagedPath, $TargetPath, $BackupPath)
+    $env:PYINSTALLER_RESET_ENVIRONMENT = "1"
     Start-Process -FilePath $TargetPath
 } catch {
     Add-Type -AssemblyName PresentationFramework

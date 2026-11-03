@@ -148,4 +148,5 @@ def test_launch_updater_tolerates_application_already_exited(
     assert "Get-Process -Id $ProcessId -ErrorAction SilentlyContinue" in script
     assert "Wait-Process -Id" not in script
     assert "[System.IO.File]::Replace($StagedPath, $TargetPath, $BackupPath)" in script
+    assert '$env:PYINSTALLER_RESET_ENVIRONMENT = "1"' in script
     assert started
