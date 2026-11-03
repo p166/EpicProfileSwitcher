@@ -148,7 +148,8 @@ try {
     if ($null -ne $process) {
         $process.WaitForExit()
     }
-    [System.IO.File]::Replace($StagedPath, $TargetPath, $null)
+    $BackupPath = "$TargetPath.$([guid]::NewGuid().ToString('N')).bak"
+    [System.IO.File]::Replace($StagedPath, $TargetPath, $BackupPath)
     Start-Process -FilePath $TargetPath
 } catch {
     Add-Type -AssemblyName PresentationFramework
@@ -161,6 +162,9 @@ try {
     exit 1
 } finally {
     Remove-Item -LiteralPath $StagedPath -Force -ErrorAction SilentlyContinue
+    if ($BackupPath) {
+        Remove-Item -LiteralPath $BackupPath -Force -ErrorAction SilentlyContinue
+    }
     Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 }
 """,
