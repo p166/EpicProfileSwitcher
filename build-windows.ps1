@@ -14,6 +14,7 @@ $distRoot = Join-Path $buildRoot 'dist'
 $workRoot = Join-Path $buildRoot 'work'
 $outputRoot = Join-Path $root 'dist\windows'
 $outputExecutable = Join-Path $outputRoot 'EpicProfileSwitcher.exe'
+$applicationIcon = Join-Path $root 'src\epic_profile_switcher\app.ico'
 
 function Invoke-Checked {
     param(
@@ -31,6 +32,10 @@ if (-not (Test-Path $python)) {
     Invoke-Checked 'py.exe' @('-3', '-m', 'venv', $venv)
 }
 
+if (-not (Test-Path $applicationIcon)) {
+    throw "Application icon not found: $applicationIcon"
+}
+
 Invoke-Checked $python @('-c', 'import sys; raise SystemExit(sys.version_info < (3, 10))')
 Invoke-Checked $python @('-m', 'pip', 'install', '--upgrade', 'pip')
 Invoke-Checked $python @('-m', 'pip', 'install', '-e', "${root}[dev,build]")
@@ -40,6 +45,8 @@ New-Item -ItemType Directory -Force -Path $distRoot, $workRoot | Out-Null
 Invoke-Checked $python @(
     '-m', 'PyInstaller', '--noconfirm', '--clean', '--windowed', '--onefile',
     '--name', 'EpicProfileSwitcher',
+    '--icon', $applicationIcon,
+    '--add-data', "$applicationIcon;epic_profile_switcher",
     '--distpath', $distRoot,
     '--workpath', $workRoot,
     '--specpath', $workRoot,

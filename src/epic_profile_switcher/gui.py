@@ -16,8 +16,9 @@ class MainWindow(tk.Tk):
         self._profiles: dict[str, Profile] = {}
         self._profile_ids: list[str] = []
         self.title("Epic Profile Switcher")
-        self.geometry("720x500")
-        self.minsize(560, 390)
+        self.geometry("760x560")
+        self.minsize(600, 440)
+        self.iconbitmap(default=str(Path(__file__).with_name("app.ico")))
 
         style = ttk.Style(self)
         style.theme_use("clam")
@@ -90,13 +91,13 @@ class MainWindow(tk.Tk):
             activestyle="none",
             background="white",
             foreground="#20242b",
-            selectbackground="#dceaf7",
-            selectforeground="#142a42",
+            selectbackground="#1769aa",
+            selectforeground="#ffffff",
             highlightthickness=1,
             highlightbackground="#d7dce2",
             highlightcolor="#1769aa",
             borderwidth=0,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 12),
             relief="flat",
         )
         self.profile_list.grid(row=0, column=0, sticky="nsew")
