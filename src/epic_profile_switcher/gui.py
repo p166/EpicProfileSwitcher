@@ -132,7 +132,10 @@ class MainWindow(tk.Tk):
         self.title("Epic Profile Switcher")
         self.geometry("760x560")
         self.minsize(600, 440)
-        self.iconbitmap(default=str(Path(__file__).with_name("app.ico")))
+        try:
+            self.iconbitmap(default=str(Path(__file__).with_name("app.ico")))
+        except tk.TclError:
+            pass
 
         style = ttk.Style(self)
         style.theme_use("clam")
